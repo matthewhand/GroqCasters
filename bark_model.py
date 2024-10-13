@@ -1,4 +1,5 @@
-from bark import preload_models, generate_text_semantic
+from bark import preload_models
+from bark.generation import generate_text_semantic
 from bark.api import semantic_to_waveform
 from tts_model import TTSModel
 
