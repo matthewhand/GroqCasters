@@ -1,16 +1,16 @@
+# groqcasters.py
+
 import argparse
 import os
 import sys
 import torch
 import numpy as np
+import logging
 from pocketgroq import GroqProvider, GroqAPIKeyMissingError, GroqAPIError
 from bark_model import BarkTTSModel
 from f5_tts_model import F5TTSModel
 from tts_model import TTSModel
-from scipy.io.wavfile import write as write_wav, read as read_wav
-from bark import SAMPLE_RATE, generate_audio, preload_models
-from bark.generation import generate_text_semantic
-from bark.api import semantic_to_waveform
+from scipy.io.wavfile import write as write_wav
 from config import (
     DEFAULT_MODEL,
     MAX_TOKENS,
@@ -20,215 +20,277 @@ from config import (
     DIALOGUE_PROMPT_TEMPLATE
 )
 
+# Setup logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 # Set environment variables
 os.environ["SUNO_USE_SMALL_MODELS"] = "True"
 os.environ["SUNO_OFFLOAD_CPU"] = "False"  # Try GPU first
 
-MALE_VOICE_PRESET = "v2/en_speaker_6"
-FEMALE_VOICE_PRESET = "v2/en_speaker_9"
-
-CUSTOM_MALE_VOICE_PATH = "null"
-CUSTOM_FEMALE_VOICE_PATH = "bark_voice_samples/female.wav"
-
-# Main GroqCastersApp with TTS model integration
 class GroqCastersApp:
-    def __init__(self, tts_model: TTSModel):
+    def __init__(self, tts_model: TTSModel, model_path=None, vocab_char_map=None):
         self.tts_model = tts_model
-        self.groq = GroqProvider()  # Initialize the GroqProvider here
+        logging.debug(f"Initialized GroqCastersApp with TTS model: {self.tts_model}")
+        # Always call load_model, even if model_path is None
+        self.tts_model.load_model(model_path=model_path)
 
-    def load_voice_model(self, model_path):
+    def load_voice_model(self, model_path, vocab_char_map=None):
+        logging.debug(f"Loading voice model from: {model_path}")
         self.tts_model.load_model(model_path)
 
-    def generate_audio(self, text: str, temp: float = 0.7, output_dir=""):
-        # Check the model type and handle the infer call accordingly
-        if isinstance(self.tts_model, F5TTSModel):
-            return self.tts_model.infer(text)  # No temperature for F5TTSModel
-        else:
-            return self.tts_model.infer(text, temperature=temp)  # BarkTTSModel accepts temperature
+    def generate_audio(self, text: str, speaker=None, ref_audio_path: str = None, output_dir: str = None, output_filename: str = "test_single.wav"):
+        """
+        Generate audio for a single text input.
 
-    # Move script generation methods here
+        Args:
+            text (str): The text to generate audio for.
+            speaker (str): The speaker identifier.
+            ref_audio_path (str): Path to the reference audio file (required for F5-TTS).
+            output_dir (str): Directory to save the output audio.
+            output_filename (str): Name of the output audio file.
+
+        Returns:
+            np.ndarray or None: The generated audio waveform as a numpy array (for Bark) or None (for F5-TTS).
+        """
+        # Generate audio based on the model type
+        logging.info(f"Generating audio with text: '{text[:50]}...'")
+        if isinstance(self.tts_model, F5TTSModel):
+            if not ref_audio_path or not output_dir:
+                logging.error("ref_audio_path and output_dir must be provided for F5-TTS.")
+                return None
+            logging.debug(f"Using F5TTSModel for inference with speaker: {speaker}")
+            # F5TTSModel's infer expects (text, speaker, ref_audio_path, output_dir, output_filename)
+            self.tts_model.infer(text, speaker, ref_audio_path, output_dir, output_filename)
+            # Assuming F5TTSModel.infer saves the audio directly
+            # Return None as audio is saved separately
+            return None
+        elif isinstance(self.tts_model, BarkTTSModel):
+            logging.debug("Using BarkTTSModel for inference.")
+            # BarkTTSModel's infer expects preprocessed data
+            preprocessed = self.tts_model.preprocess_text(text)
+            audio = self.tts_model.infer(preprocessed, speaker=speaker)
+            # Return the audio segment for concatenation
+            return audio
+        else:
+            raise NotImplementedError("Unsupported TTS model.")
+    
+class GroqCasters:
+    def __init__(self, voice_model='bark', model_path=None, vocab_char_map_path=None):
+        try:
+            self.groq = GroqProvider()
+            self._setup_gpu()
+            # Initialize vocab_char_map to None
+            vocab_char_map = None
+
+            # Load vocabulary character map if provided
+            if vocab_char_map_path and os.path.exists(vocab_char_map_path):
+                vocab_char_map = self._load_vocab_char_map(vocab_char_map_path)
+                logging.info(f"Loaded vocabulary character map from: {vocab_char_map_path}")
+            elif voice_model == "f5_tts":
+                logging.error("vocab_char_map_path must be provided for F5-TTS.")
+                sys.exit(1)
+            else:
+                logging.warning("Vocabulary character map not provided. Proceeding without it.")
+
+            # Initialize the correct TTS model based on the argument
+            if voice_model == "f5_tts":
+                logging.info("Using F5-TTS Model")
+                self.tts_model = F5TTSModel()
+            else:
+                logging.info("Using Bark Model")
+                self.tts_model = BarkTTSModel()
+            
+            # Automatically load the model
+            self.app = GroqCastersApp(self.tts_model, model_path, vocab_char_map)
+        except GroqAPIKeyMissingError:
+            logging.error("GROQ_API_KEY not found. Please set it in your environment variables.")
+            sys.exit(1)
+        except Exception as e:
+            logging.error(f"Error during initialization: {e}")
+            sys.exit(1)
+
+    def _setup_gpu(self):
+        if torch.cuda.is_available():
+            logging.info(f"GPU available: {torch.cuda.get_device_name(0)}")
+            torch.cuda.set_device(0)
+        else:
+            logging.warning("No GPU available. Using CPU.")
+            os.environ["SUNO_OFFLOAD_CPU"] = "True"
+
+    def _load_vocab_char_map(self, vocab_char_map_path):
+        """
+        Load the vocabulary character map from a text file.
+        Each line in the file should contain a single token.
+
+        Args:
+            vocab_char_map_path (str): Path to the vocabulary character map text file.
+
+        Returns:
+            dict: A dictionary mapping tokens to unique indices.
+        """
+        vocab_char_map = {}
+        try:
+            with open(vocab_char_map_path, 'r', encoding='utf-8') as f:
+                for idx, line in enumerate(f, start=1):
+                    token = line.strip()
+                    if token:  # Skip empty lines
+                        vocab_char_map[token] = idx
+            return vocab_char_map
+        except Exception as e:
+            logging.exception(f"Failed to load vocab_char_map from {vocab_char_map_path}")
+            raise e
+
     def generate_podcast_script(self, input_text):
+        logging.info(f"Generating podcast script from input: '{input_text[:50]}...'")
         outline = self._generate_outline(input_text)
         if not outline:
+            logging.error("Failed to generate outline")
             return None
         full_script = self._expand_outline(outline)
         if not full_script:
+            logging.error("Failed to expand outline")
             return None
         dialogue_script = self._convert_to_dialogue(full_script)
         return dialogue_script
 
     def _generate_outline(self, input_text):
         prompt = OUTLINE_PROMPT_TEMPLATE.format(input_text=input_text)
+        logging.debug(f"Outline prompt: {prompt}")
         try:
             return self.groq.generate(prompt, model=DEFAULT_MODEL, max_tokens=MAX_TOKENS["outline"])
         except GroqAPIError as e:
-            print(f"Error generating outline: {e}")
+            logging.error(f"Error generating outline: {e}")
             return None
 
     def _expand_outline(self, outline):
         prompt = EXPAND_PROMPT_TEMPLATE.format(outline=outline, host_profiles=HOST_PROFILES)
+        logging.debug(f"Expand prompt: {prompt}")
         try:
             return self.groq.generate(prompt, model=DEFAULT_MODEL, max_tokens=MAX_TOKENS["full_script"])
         except GroqAPIError as e:
-            print(f"Error expanding outline: {e}")
+            logging.error(f"Error expanding outline: {e}")
             return None
 
     def _convert_to_dialogue(self, full_script):
         prompt = DIALOGUE_PROMPT_TEMPLATE.format(full_script=full_script, host_profiles=HOST_PROFILES)
+        logging.debug(f"Dialogue prompt: {prompt}")
         try:
             return self.groq.generate(prompt, model=DEFAULT_MODEL, max_tokens=MAX_TOKENS["dialogue"])
         except GroqAPIError as e:
-            print(f"Error converting to dialogue: {e}")
+            logging.error(f"Error converting to dialogue: {e}")
             return None
 
-# GroqCasters class handling script generation and audio
-class GroqCasters:
-    def __init__(self):
-        try:
-            self.groq = GroqProvider()
-            self._setup_gpu()
-            preload_models()
-            self.custom_male_voice = self._create_voice_prompt(CUSTOM_MALE_VOICE_PATH)
-            self.custom_female_voice = self._create_voice_prompt(CUSTOM_FEMALE_VOICE_PATH)
-        except GroqAPIKeyMissingError:
-            print("Error: GROQ_API_KEY not found. Please set it in your environment variables.")
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error during initialization: {e}")
-            sys.exit(1)
+    def generate_audio_from_script(self, script, output_dir, output_filename="full_podcast.wav", ref_audio_path: str = None):
+        """
+        Generate audio from the podcast script.
 
-    def _setup_gpu(self):
-        if torch.cuda.is_available():
-            print(f"GPU available: {torch.cuda.get_device_name(0)}")
-            torch.cuda.set_device(0)
-        else:
-            print("No GPU available. Using CPU.")
-            os.environ["SUNO_OFFLOAD_CPU"] = "True"
+        Args:
+            script (str): The podcast script in dialogue format.
+            output_dir (str): Directory to save the output audio.
+            output_filename (str): Name of the output audio file.
+            ref_audio_path (str): Path to the reference audio file (required for F5-TTS).
 
-    def _create_voice_prompt(self, audio_file_path):
-        if audio_file_path == "null" or not os.path.exists(audio_file_path):
-            print(f"Warning: Custom voice file not found at {audio_file_path}. Using default voice.")
-            return None
-        try:
-            sample_rate, audio_data = read_wav(audio_file_path)
-            if audio_data.dtype != np.int16:
-                audio_data = (audio_data * 32767).astype(np.int16)
-            audio_data = audio_data.astype(np.float32) / 32767.0
-            audio_data = audio_data[:, 0] if len(audio_data.shape) > 1 else audio_data
-            if sample_rate != SAMPLE_RATE:
-                print(f"Warning: Audio file sample rate ({sample_rate} Hz) does not match required rate ({SAMPLE_RATE} Hz).")
-            semantic_tokens = generate_text_semantic(
-                "Hello, this is a voice prompt.", 
-                history_prompt=audio_data, temp=0.7, 
-                min_eos_p=0.05, d_vector=None
-            )
-            return semantic_tokens
-        except Exception as e:
-            print(f"Error processing custom voice file: {e}")
-            return None
+        Returns:
+            None
+        """
+        # Preprocess the script to replace speaker names with "Speaker:"
+        #processed_script = preprocess_script(script)
+        processed_script = script
 
-    def generate_audio_from_script(self, script, output_dir):
-        lines = script.split("\n")
+        lines = processed_script.split("\n")
         audio_segments = []
+
         for line in lines:
             if line.strip():
-                speaker, text = line.split(":", 1)
-                speaker = speaker.strip().lower()
-                text = text.strip()
-                if speaker == "mike":
-                    voice = self.custom_male_voice if self.custom_male_voice is not None else MALE_VOICE_PRESET
-                else:
-                    voice = self.custom_female_voice if self.custom_female_voice is not None else FEMALE_VOICE_PRESET
                 try:
-                    if isinstance(voice, str):
-                        audio_array = generate_audio(text, history_prompt=voice)
+                    speaker, text = line.split(":", 1)
+                    speaker = speaker.strip().lower()  # Normalize the speaker label
+                    text = text.strip()
+
+                    # Debug logging
+                    logging.debug(f"Processing line - Speaker: {speaker}, Text: '{text[:50]}...'")
+
+                    # Generate audio using the appropriate model (Bark or F5-TTS)
+                    audio_segment = self.app.generate_audio(text, speaker=speaker, ref_audio_path=ref_audio_path, output_dir=output_dir, output_filename=output_filename)
+                    if audio_segment is not None:
+                        audio_segments.append(audio_segment)
                     else:
-                        semantic_tokens = generate_text_semantic(
-                            text,
-                            history_prompt=voice,
-                            temp=0.7,
-                            min_eos_p=0.05,
-                        )
-                        audio_array = semantic_to_waveform(semantic_tokens)
-                    audio_segments.append(audio_array)
-                except Exception as e:
-                    print(f"Error generating audio for line: {line}")
-                    print(f"Error details: {e}")
-        full_audio = np.concatenate(audio_segments)
-        output_file = os.path.join(output_dir, "full_podcast.wav")
-        write_wav(output_file, SAMPLE_RATE, full_audio)
-        print(f"Full podcast audio saved to: {output_file}")
+                        logging.info(f"F5-TTS audio segment for line saved to {output_filename}")
+                
+                except ValueError as e:
+                    logging.error(f"Error processing line: '{line}'. Expected format: 'Speaker: Text'. Details: {e}")
+        
+        # Concatenate all audio segments (only for Bark)
+        if isinstance(self.tts_model, BarkTTSModel):
+            if audio_segments:
+                full_audio = np.concatenate(audio_segments)
+                output_file = os.path.join(output_dir, output_filename)
+                write_wav(output_file, 22050, full_audio)
+                logging.info(f"Full podcast audio saved to: {output_file}")
+            else:
+                logging.error("No audio segments were generated.")
+        else:
+            logging.info("F5-TTS audio segments saved individually.")
 
 def process_input_text(file_path):
     try:
         with open(file_path, "r") as file:
             return file.read().strip()
     except FileNotFoundError:
-        print(f"Error: File not found at {file_path}")
+        logging.error(f"File not found at {file_path}")
         return None
     except IOError:
-        print(f"Error: Unable to read file at {file_path}")
+        logging.error(f"Unable to read file at {file_path}")
         return None
 
 def main():
     parser = argparse.ArgumentParser(description="GroqCasters Podcast Generation")
-    
-    # Existing arguments
     parser.add_argument("input_file_path", type=str, help="Path to the input file")
     parser.add_argument("output_directory", type=str, help="Directory to save the output")
     parser.add_argument("--use-script", action="store_true", help="Use a pre-written script")
-    
-    # New arguments for voice model and temperature
-    parser.add_argument("--voice-model", type=str, choices=["f5_tts", "bark"], default="bark",
-                        help="Specify the TTS model to use (e.g., 'f5_tts' or 'bark')")
-    parser.add_argument("--voice-temperature", type=float, default=0.7,
-                        help="Temperature for TTS generation (default: 0.7 for creativity vs. stability)")
-
+    parser.add_argument("--output-filename", type=str, default="full_podcast.wav", help="Name of the output audio file (default: full_podcast.wav)")
+    parser.add_argument("--voice-model", type=str, choices=["bark", "f5_tts"], default="bark", help="Choose between 'bark' and 'f5_tts' voice models")
+    parser.add_argument("--model-path", type=str, default=None, help="Path to the model (optional)")
+    parser.add_argument("--vocab-char-map", type=str, default=None, help="Path to the vocabulary character map text file (required for F5-TTS)")
+    parser.add_argument("--ref-audio-path", type=str, default=None, help="Path to the reference audio file (required for F5-TTS)")
     args = parser.parse_args()
 
     input_file_path = args.input_file_path
     output_directory = args.output_directory
+    output_filename = args.output_filename
     use_existing_script = args.use_script
     voice_model = args.voice_model
-    voice_temperature = args.voice_temperature
+    model_path = args.model_path
+    vocab_char_map_path = args.vocab_char_map
+    ref_audio_path = args.ref_audio_path
 
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
 
-    # Load the correct model based on the user-specified voice model
-    if voice_model == "f5_tts":
-        tts_model = F5TTSModel()
-    else:
-        tts_model = BarkTTSModel()  # Default
-
-    # Initialize the GroqCastersApp with the specified TTS model
-    casters_app = GroqCastersApp(tts_model)
+    casters = GroqCasters(voice_model, model_path, vocab_char_map_path)
 
     if use_existing_script:
-        print("Using pre-written script...")
+        logging.info("Using pre-written script...")
         script = process_input_text(input_file_path)
         if not script:
-            print("Failed to read the script file.")
+            logging.error("Failed to read the script file.")
             return
     else:
-        print("Generating new podcast script...")
+        logging.info("Generating new podcast script...")
         input_text = process_input_text(input_file_path)
         if not input_text:
-            print("Failed to process input text.")
+            logging.error("Failed to process input text.")
             return
-        script = casters_app.generate_podcast_script(input_text)
+        script = casters.generate_podcast_script(input_text)
         if not script:
-            print("Failed to generate podcast script.")
+            logging.error("Failed to generate podcast script.")
             return
 
-    print("Generated/Loaded podcast script:")
-    print(script)
-
-    # Use the specified temperature for audio generation
-    print(f"Generating audio with voice model '{voice_model}' and temperature {voice_temperature}")
-    casters_app.generate_audio(script, voice_temperature, output_directory)
-    print("Done!")
+    logging.info("Generated/Loaded podcast script:")
+    logging.info(script)
+    logging.info("Generating audio")
+    casters.generate_audio_from_script(script, output_directory, output_filename, ref_audio_path)
+    logging.info("Done!")
 
 if __name__ == "__main__":
     main()
-

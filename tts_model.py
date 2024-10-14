@@ -1,22 +1,23 @@
-class TTSModel:
-    """
-    Base class for Text-to-Speech models. 
-    Both Bark and F5-TTS models will inherit from this class.
-    """
+# tts_model.py
 
+from abc import ABC, abstractmethod
+import torch
+
+class TTSModel(ABC, torch.nn.Module):
     def __init__(self):
-        raise NotImplementedError("TTSModel is an abstract base class and cannot be instantiated directly.")
-    
-    def generate_audio(self, text):
-        """
-        Method to generate audio from text.
-        Each TTS model should implement this method.
-        """
-        raise NotImplementedError("This method should be overridden by subclasses.")
+        super().__init__()
 
-    def preload_models(self):
-        """
-        Preload model files and assets if required.
-        """
-        raise NotImplementedError("This method should be overridden by subclasses.")
+    @abstractmethod
+    def load_model(self, model_path=None):
+        """Load the TTS model from the specified path."""
+        pass
 
+    @abstractmethod
+    def preprocess_text(self, text: str) -> torch.Tensor:
+        """Preprocess the input text and convert it to tensor indices."""
+        pass
+
+    @abstractmethod
+    def infer(self, text: str, speaker: str) -> torch.Tensor:
+        """Generate audio waveform from text and speaker information."""
+        pass
