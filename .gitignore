@@ -69,3 +69,6 @@ data/
 # Ignore system-specific files
 *.bak
 *.orig
+*.processed
+*.pyc
+
