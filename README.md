@@ -1,9 +1,16 @@
 # GroqCasters
 
+**This fork of GroqCasters extends the original project with the following:**
+- Integration with F5-TTS for advanced voice cloning capabilities.
+- An abstraction layer allowing users to switch between Bark and F5-TTS for voice generation.
+- Important note: The F5-TTS project is undergoing significant updates and refactors, and this version may not be fully interoperable with future F5-TTS releases.
+  - [ ] TODO: Revisit F5-TTS progress and merge updates when the project stabilizes.
+
+---
+
 GroqCasters is a Python application that generates podcast scripts and corresponding audio using AI technologies. It leverages PocketGroq for script generation and Bark for text-to-speech conversion, allowing for custom voice cloning.
 
 ![image](https://github.com/user-attachments/assets/da5b4697-5324-47b6-8958-e98a1185f3da)
-
 
 ## Table of Contents
 1. [Installation](#installation)
@@ -17,24 +24,24 @@ GroqCasters is a Python application that generates podcast scripts and correspon
 ## Installation
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/yourusername/groqcasters.git
    cd groqcasters
    ```
 
 2. Create a virtual environment (optional but recommended):
-   ```
+   ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
    ```
 
 3. Install the required dependencies:
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
 4. Set up your GROQ API key as an environment variable:
-   ```
+   ```bash
    export GROQ_API_KEY=your_api_key_here
    ```
    On Windows, use `set GROQ_API_KEY=your_api_key_here`
@@ -44,12 +51,12 @@ GroqCasters is a Python application that generates podcast scripts and correspon
 GroqCasters can be used in two modes:
 
 1. Generate a new script and audio:
-   ```
+   ```bash
    python groqcasters.py path/to/input_text.txt path/to/output_directory
    ```
 
 2. Use a pre-written script:
-   ```
+   ```bash
    python groqcasters.py path/to/script.txt path/to/output_directory --use-script
    ```
 
@@ -140,6 +147,7 @@ GroqCasters is initially designed for two characters, but you can extend it to s
              "sarah": self._create_voice_prompt("path/to/sarah_voice.wav")
          }
      ```
+
    - Modify the `generate_audio_from_script` method to use the new voice selection:
      ```python
      def generate_audio_from_script(self, script, output_dir):
@@ -173,56 +181,27 @@ GroqCasters is initially designed for two characters, but you can extend it to s
    - Create test scripts with multiple characters to ensure the system handles them correctly.
    - Generate audio for these test scripts and verify that each character has the correct voice.
 
-Remember to update any other parts of the code that might assume a two-character setup, such as any hardcoded references to "Rachel" or "Mike".
-
-By following these steps, you can extend GroqCasters to support as many characters as you need. This allows for creating more diverse and dynamic podcast scripts with a wider range of voices and personalities.
-
 ## Additional Resources
 
 - [Bark GitHub Repository](https://github.com/suno-ai/bark)
 - [PocketGroq Documentation](https://pocketgroq.readthedocs.io/)
 - [Groq API Documentation](https://console.groq.com/docs/quickstart)
 
-For more information on using Bark and PocketGroq, refer to their respective documentation:
-
-- [Bark GitHub Docs](https://github.com/suno-ai/bark/blob/main/README.md)
-- [PocketGroq Docs](https://github.com/jgravelle/pocketgroq/blob/main/README.md)
-
-
-
 Contributing
 Contributions to GroqCasters are welcome! If you encounter any problems, have feature suggestions, or want to improve the codebase, feel free to:
 
-Open issues on the GitHub repository.
-Submit pull requests with bug fixes or new features.
-Improve documentation or add examples.
+- Open issues on the GitHub repository.
+- Submit pull requests with bug fixes or new features.
+- Improve documentation or add examples.
+
 When contributing, please:
 
-Follow the existing code style and conventions.
-Write clear commit messages.
-Add or update tests for new features or bug fixes.
-Update the README if you're adding new functionality.
-License
-This project is licensed under the MIT License. When using any of Gravelle's code in your projects, please include a mention of "J. Gravelle" in your code and/or documentation. He's kinda full of himself, but he'd appreciate the acknowledgment.
-
-## Support
-
-For issues and feature requests, please [open an issue](https://github.com/yourusername/groqcasters/issues) on the GitHub repository.
-
-![image](https://github.com/user-attachments/assets/88bf1801-134e-4479-8314-102ff418ddf4)
+- Follow the existing code style and conventions.
+- Write clear commit messages.
+- Add or update tests for new features or bug fixes.
+- Update the README if you're adding new functionality.
 
 ## License
 GroqCasters is proudly open-source and released under the MIT License.
 
 Thank you for choosing GroqCasters. We are committed to redefining the boundaries of what AI can achieve.
-
-Copyright (c)2024 J. Gravelle
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-1. The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-2. Any modifications made to the Software must clearly indicate that they are derived from the original work, and the name of the original author (J. Gravelle) must remain intact.
-
-3. Redistributions of the Software in source code form must also include a prominent notice that the code has been modified from the original.
-
-THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
