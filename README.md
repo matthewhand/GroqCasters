@@ -46,6 +46,31 @@ GroqCasters is a Python application that generates podcast scripts and correspon
    ```
    On Windows, use `set GROQ_API_KEY=your_api_key_here`
 
+## Security-updated audio dependencies (SEC-018)
+
+The critical Torch/Transformers fixes are tested with Python 3.12, Torch/TorchAudio 2.6
+CPU builds, NumPy 2.x, and the official `suno-bark` distribution. CPU-only builds
+can be selected from the official PyTorch CPU wheel index; GPU builds need separate
+platform compatibility verification. Never load checkpoints from untrusted sources.
+
+Bark retains independent speaker routing (`mike` / `rachel`) and its existing
+preset names. F5-TTS uses the supported official `f5_tts.api.F5TTS` loader and
+requires **local** checkpoint files, vocoder files, and matching reference-audio
+transcripts. Set these in your environment before running `--voice-model f5_tts`:
+
+- `F5_TTS_MODEL_PATH`: parent directory containing each model's
+  `F5TTS_Base/model_1200000.pt` or `E2TTS_Base/model_1200000.pt` checkpoint.
+- `F5_TTS_VOCODER_PATH`: existing directory containing `config.yaml` and
+  `pytorch_model.bin`.
+- `F5_TTS_REF_TEXT_MIKE` and `F5_TTS_REF_TEXT_RACHEL`: transcripts corresponding
+  to their local reference audio clips.
+- Pass `--vocab-char-map` and `--ref-audio-paths` pointing to existing local files.
+
+If required local files are missing, the F5 integration fails before constructing
+the model rather than silently downloading weights. **No actual Bark/F5 pretrained
+weight inference was performed as part of SEC-018 acceptance**; the recorded checks
+exercise real package imports, dependency resolution, and model-free inference routes.
+
 ## Usage
 
 GroqCasters can be used in two modes:

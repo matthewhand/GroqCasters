@@ -84,7 +84,7 @@ class GroqCastersApp:
                 return audio_waveform
             elif isinstance(self.tts_model, BarkTTSModel):
                 # Bark handles labels internally
-                audio_waveform = self.tts_model.infer(text)
+                audio_waveform = self.tts_model.infer(text, speaker=speaker)
                 return audio_waveform
             else:
                 logging.error("Unsupported TTS model.")
