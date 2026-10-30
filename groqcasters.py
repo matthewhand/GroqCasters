@@ -33,11 +33,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 )
 
-# Test logging
-logging.debug("This is a DEBUG message.")
-logging.info("This is an INFO message.")
-logging.error("This is an ERROR message.")
-
 # Set environment variables
 os.environ["SUNO_USE_SMALL_MODELS"] = "True"
 os.environ["SUNO_OFFLOAD_CPU"] = "False"  # Try GPU first
@@ -74,7 +69,9 @@ class GroqCastersApp:
                 # Retrieve reference audio path for the speaker
                 ref_audio_path = self.speaker_ref_map.get(speaker)
                 if not ref_audio_path:
-                    logging.warning(f"No reference audio provided for speaker '{speaker}'. Using default.")
+                    # F5-TTS requires a reference audio path; there is no valid default.
+                    logging.error(f"No reference audio path configured for speaker '{speaker}'; cannot generate audio with F5-TTS.")
+                    return None
                 # Generate audio waveform
                 audio_waveform = self.tts_model.infer(
                     text=text,
@@ -84,7 +81,7 @@ class GroqCastersApp:
                 return audio_waveform
             elif isinstance(self.tts_model, BarkTTSModel):
                 # Bark handles labels internally
-                audio_waveform = self.tts_model.infer(text)
+                audio_waveform = self.tts_model.infer(text, speaker=speaker)
                 return audio_waveform
             else:
                 logging.error("Unsupported TTS model.")
@@ -226,7 +223,13 @@ class GroqCasters:
             logging.info(f"Truncated script to {max_lines} lines.")
 
         # Enforce speaker alternation
-        speakers = list(self.tts_model.speaker_model_map.keys())
+        speaker_model_map = getattr(self.tts_model, "speaker_model_map", None)
+        if speaker_model_map:
+            speakers = list(speaker_model_map.keys())
+        else:
+            # Bark models may not expose a speaker_model_map; fall back to defaults.
+            logging.warning("TTS model has no speaker_model_map; using default speakers ['mike', 'rachel'].")
+            speakers = ["mike", "rachel"]
         dialogue_script = self.enforce_speaker_alternation(dialogue_script, speakers)
         logging.info("Enforced speaker alternation.")
 
@@ -361,6 +364,23 @@ class GroqCasters:
 
                 # Define output file path
                 output_file = os.path.join(output_dir, output_filename)  # Ensure output_file is defined here
+
+                # Normalize segment shapes to channel-first (channels, n_samples)
+                normalized_segments = []
+                for segment_idx, segment in enumerate(audio_segments):
+                    segment = np.asarray(segment)
+                    if segment.ndim == 1:
+                        # Mono audio: promote to (1, n_samples)
+                        segment = segment[np.newaxis, :]
+                    elif segment.ndim == 2:
+                        pass  # Already (channels, n_samples)
+                    else:
+                        logging.error(
+                            f"Unsupported audio segment dimension {segment.ndim} for segment {segment_idx+1}; expected 1D mono or 2D channel-first array."
+                        )
+                        return None
+                    normalized_segments.append(segment)
+                audio_segments = normalized_segments
 
                 if len(audio_segments) == 1:
                     # Single segment: Transpose and process directly
