@@ -1,8 +1,9 @@
 pocketgroq>=0.3.0
 groq
 suno-bark==0.1.5
-torch==2.6.0
-torchaudio==2.6.0
+torch==2.13.0
+torchaudio==2.11.0
+torchcodec==0.16.0
 numpy>=2.0,<2.3
 scipy
 transformers>=4.36.0,<5.0
