@@ -28,11 +28,12 @@ class DependencySecurityTest(unittest.TestCase):
     def test_requirements_file_exists(self):
         self.assertTrue(REQUIREMENTS_FILE.is_file())
 
-    def test_torch_pinned_to_2_6_0(self):
-        self.assertEqual(self.reqs.get("torch"), "==2.6.0")
+    def test_torch_pinned_to_2_13_0(self):
+        self.assertEqual(self.reqs.get("torch"), "==2.13.0")
 
-    def test_torchaudio_pinned_to_2_6_0(self):
-        self.assertEqual(self.reqs.get("torchaudio"), "==2.6.0")
+    def test_torchaudio_and_codec_pinned(self):
+        self.assertEqual(self.reqs.get("torchaudio"), "==2.11.0")
+        self.assertEqual(self.reqs.get("torchcodec"), "==0.16.0")
 
     def test_numpy_bounded_2_0_to_lt_2_3(self):
         spec = self.reqs.get("numpy")

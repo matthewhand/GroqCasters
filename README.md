@@ -48,10 +48,21 @@ GroqCasters is a Python application that generates podcast scripts and correspon
 
 ## Security-updated audio dependencies (SEC-018)
 
-The critical Torch/Transformers fixes are tested with Python 3.12, Torch/TorchAudio 2.6
-CPU builds, NumPy 2.x, and the official `suno-bark` distribution. CPU-only builds
-can be selected from the official PyTorch CPU wheel index; GPU builds need separate
-platform compatibility verification. Never load checkpoints from untrusted sources.
+TorchAudio 2.11.0 uses PyTorch's stable ABI and supports Torch 2.13.0.
+TorchAudio delegates file decoding and encoding to TorchCodec, which needs a
+[shared FFmpeg build](https://ffmpeg.org/download.html). On Windows, add the
+FFmpeg DLL directory to the Python process `PATH`.
+
+For a CPU install with Python 3.12, select CPU wheels before installing the
+project requirements.
+
+```shell
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.13.0 torchaudio==2.11.0 torchcodec==0.16.0
+python -m pip install -r requirements.txt
+```
+
+GPU builds need separate platform compatibility verification. Never load
+checkpoints from untrusted sources.
 
 Bark retains independent speaker routing (`mike` / `rachel`) and its existing
 preset names. F5-TTS uses the supported official `f5_tts.api.F5TTS` loader and

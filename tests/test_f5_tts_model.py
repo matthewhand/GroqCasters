@@ -77,7 +77,9 @@ class F5TTSModelTest(unittest.TestCase):
         kwargs = _FakeF5TTS.instances[0].init_kwargs
         self.assertEqual(kwargs["model"], "F5TTS_Base")
         self.assertTrue(os.path.isfile(kwargs["ckpt_file"]))
-        self.assertEqual(kwargs["ckpt_file"], self.ckpt)
+        self.assertEqual(
+            os.path.normpath(kwargs["ckpt_file"]), os.path.normpath(self.ckpt)
+        )
         self.assertEqual(kwargs["vocab_file"], self.vocab)
         self.assertEqual(kwargs["vocoder_local_path"], self.vocoder_dir)
         self.assertTrue(os.path.isdir(kwargs["vocoder_local_path"]))
